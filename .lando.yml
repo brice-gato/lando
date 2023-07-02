@@ -1,0 +1,109 @@
+name: my-d10
+recipe: drupal10
+config:
+  webroot: web
+  # Define database server (optional).
+  # database: 'mariadb'
+  database: mysql:8.0
+  php: '8.1'
+  via: apache:2.4
+  # via: nginx
+  ssl: true
+  composer_version: 2-latest
+  # note this is just for lando/docker as 'global' install--drush is installed via drupal composer for local site use
+  # Use the latest version with '*'.
+  drush: ^11
+  # drush: false
+  xdebug: true
+  # Use "config" to extend or override service config.
+  config:
+    # Database config overrides can be used for configuring things like
+    # collation, charset, etc.
+    # database: lando/.lando.mysql.conf
+    php: lando/.lando.php.ini
+    # server: lando/.lando.nginx.conf
+    # vhosts: lando/.lando.vhost.conf
+services:
+  phpmyadmin:
+    type: phpmyadmin
+    hosts:
+      - database
+  appserver:
+    build:
+      - composer create-project --no-interaction drupal/recommended-project:10.1.0 tmplando
+      - cp -rf tmplando/* ./
+      - rm -rf tmplando
+      # Run "composer install" automatically during build.
+      - composer install --no-interaction
+      - composer require drush/drush
+      - composer update -- drupal/core "drupal/core-*" --with-all-dependencies --no-interaction
+      - chmod -R 775 web/sites/default
+    # Additional provisioning commands can be added to "extras".
+    extras:
+      - apt update -y --fix-missing
+      - apt install nano vim -y
+      - apt install -y --no-install-recommends git
+      - git checkout composer.json composer.json composer.lock
+    overrides:
+      ports:
+        - "0.0.0.0::80"
+      environment:
+        PHP_SENDMAIL_PATH: '/usr/sbin/sendmail -S mailhog:1025'
+  mailhog:
+    type: mailhog
+    # Optional access at localhost:1026
+    # portforward: 1026
+    portforward: true
+    hogfrom:
+      - appserver
+  # Solr
+  # Spin up a Solr container called "search".
+  search:
+    # Use a specific Solr version, same as the default one at the time of writing.
+    type: solr:8.6
+    # Optionally declare the name of the Solr core.
+    # This setting is only applicable for versions 5.5 and above.
+    core: drupal10
+    # Optionally allow access at localhost:9999.
+    # You will need to make sure port 9999 is open on your machine.
+    # You can also set `portforward: true` to have Lando dynamically assign a port. 
+    # Unlike specifying an actual port setting this to true will give you
+    # a different port every time you restart your app.
+    # portforward: 9999
+    # Optionally use custom Solr config files eg (schema.xml and solrconfig.xml).
+    # This is relative to the app root (which may be different from your webroot).
+    # This should be the directory containing the schema.xml and solrconfig.xml files, not the path to a certain file.
+    config:
+      conf: web/modules/contrib/search_api_solr/solr-conf/7.x
+proxy:
+  phpmyadmin:
+    - phpmyadmin.my-d10.lndo.site
+  mailhog:
+    - mail.my-d10.lndo.site
+  search:
+    - solr.my-d10.lndo.site:8983
+tooling:
+  'lint:php:themes':
+    service: appserver
+    cmd: /app/vendor/bin/phpcs --standard=phpcs-themes.xml
+    description: 'Runs php linter against your custom code. Ex: lando lint:php'
+  drush:
+    service: appserver
+    cmd:
+      - "drush --root=/app/web"
+    env:
+     DRUSH_OPTIONS_URI: "http://my-d10.lndo.site"
+  composer:
+    service: appserver
+    cmd:
+      - "php -d memory_limit=-1 /usr/local/bin/composer --working-dir=/app"
+  xdebug-on:
+    service: appserver
+    description: Enable xdebug for apache.
+    cmd: "docker-php-ext-enable xdebug && /etc/init.d/apache2 reload"
+    user: root
+  xdebug-off:
+    service: appserver
+    description: Disable xdebug for apache.
+    cmd: "rm /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini && /etc/init.d/apache2 reload"
+    user: root

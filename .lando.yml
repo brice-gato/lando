@@ -75,6 +75,7 @@ services:
     # This should be the directory containing the schema.xml and solrconfig.xml files, not the path to a certain file.
     config:
       conf: web/modules/contrib/search_api_solr/solr-conf/7.x
+      # dir: web/modules/contrib/search_api_solr/solr-conf-templates/7.x
 proxy:
   phpmyadmin:
     - phpmyadmin.my-d10.lndo.site
